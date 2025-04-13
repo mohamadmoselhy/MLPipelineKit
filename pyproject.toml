@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "ml-system-toolkit"
+name = "MyLibirary"
 version = "0.0.1"
 authors = [
   { name="Mohamed Ibrahim Moselhy", email="Mohamed_Moselhy@outlook.com" },
@@ -27,6 +27,7 @@ Issues = "https://github.com/mohamadmoselhy/ml-system-toolkit"
 # Build configuration to specify included directories
 [tool.hatch.build.targets.wheel]
 packages = [
-    "src/MachineLearning",
-    "src/data_utils"
+    "src/MyMachineLearningLib",
+    "src/MyDataUitlsLib",
+	"src/MyVisualizationLib"
 ]
