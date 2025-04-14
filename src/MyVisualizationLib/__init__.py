@@ -3,101 +3,57 @@ import seaborn as sns
 import os
 import random
 
-def plot_boxplots(df, features, save_folder="boxplot_images", figsize=(8,10), palette="coolwarm"):
+def plot_boxplots(df, features, save_folder="Milestone 1/boxplot_images", figsize=(8, 10), palette="coolwarm"):
     """
     Plots boxplots for the specified numerical features in a DataFrame and saves each plot to a specified subfolder.
     Displays the distribution and identifies potential outliers for each feature.
-    
+
     Args:
         df (pd.DataFrame): The DataFrame containing the data to be plotted.
         features (list): A list of column names (features) to plot as boxplots.
-        save_folder (str, optional): The folder to save the plots. Default is "boxplot_images".
+        save_folder (str, optional): The folder to save the plots. Supports nested folders. Default is "Milestone 1/boxplot_images".
         figsize (tuple, optional): The size of the plot. Default is (8,10).
         palette (str, optional): The color palette for the boxplots. Default is "coolwarm".
-    
+
     Returns:
         None: Saves each boxplot to the specified folder.
     """
-    # Create the folder if it does not exist
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
-    
-    num_features = len(features)
-    
-    # Plot the boxplots for each feature and save them
-    for i, feature in enumerate(features, 1):
+    # Create nested folder path if it does not exist
+    os.makedirs(save_folder, exist_ok=True)
+
+    # Plot and save boxplots
+    for feature in features:
         plt.figure(figsize=figsize)
-        sns.boxplot(y=df[feature], width=0.4, palette=palette, hue=None)
+        sns.boxplot(y=df[feature], width=0.4, palette=palette)
         plt.grid(alpha=0.3)
         plt.title(feature, fontsize=12, fontweight="bold")
         plt.xticks([])
-        
-        # Save the plot as a PNG file
+
+        # Save plot
         plot_path = os.path.join(save_folder, f"{feature}_boxplot.png")
-        plt.savefig(plot_path)
-        plt.close()  # Close the figure to avoid overlap in the next iteration
+        plt.savefig(plot_path, bbox_inches='tight')
+        plt.close()
 
-    print(f"Boxplots saved in the '{save_folder}' folder.")
+    print(f"Boxplots saved in '{save_folder}'")
 
 
-def plot_histograms(data, features, colors, save_folder="histogram_images"):
+
+
+
+def plot_histograms(data, features, colors=None, save_folder="Milestone 1/histogram_images", figsize=(10, 6)):
     """
-    Plots histograms with KDE for the specified categorical features in the dataset and saves each plot as a separate image.
-    
-    Args:
-        data (pd.DataFrame): The DataFrame containing the data.
-        features (list): A list of feature names (strings) to plot histograms for.
-        colors (list): A list of colors corresponding to each feature for the histograms.
-        save_folder (str, optional): The folder to save the plots. Default is "histogram_images".
-        
-    Returns:
-        None: Saves each histogram plot as a separate PNG file in the specified folder.
-    """
-    # Convert DataFrame column names to lowercase for case-insensitive comparison
-    data.columns = map(str.lower, data.columns)
-
-    # Convert features list to lowercase for matching
-    features_lower = [feature.lower() for feature in features]
-
-    # Create the folder if it does not exist
-    if not os.path.exists(save_folder):
-        os.makedirs(save_folder)
-
-    # Loop through features and plot histograms, saving each as a separate image
-    for i, (feature, color) in enumerate(zip(features_lower, colors), 1):
-        if feature in data.columns:  # Ensure the column exists
-            plt.figure(figsize=(10, 6))  # Create a new figure for each histogram
-            sns.histplot(data[feature], bins=10, kde=True, color=color)
-            plt.title(feature.capitalize(), fontsize=12, fontweight="bold")  # Format title
-            plt.xticks(rotation=30)
-            plt.yticks(rotation=30)
-            
-            # Save the plot as a PNG file
-            plot_path = os.path.join(save_folder, f"{feature}_histogram.png")
-            plt.savefig(plot_path)
-            plt.close()  # Close the figure to avoid overlap with the next one
-        else:
-            print(f"Warning: Column '{feature}' not found in dataset.")
-
-    print(f"Histograms saved in the '{save_folder}' folder.")
-
-
-
-def plot_histograms(data, features, colors=None, save_folder="histogram_images"):
-    """
-    Plots histograms with KDE for the specified features in the dataset. 
-    If no colors are provided, random colors are assigned to each feature. 
-    Each plot is saved as a separate image file.
+    Plots histograms with KDE for the specified features in the dataset and saves each plot to a specified subfolder.
+    Displays the distribution for each feature and optionally assigns custom or random colors.
     
     Args:
         data (pd.DataFrame): The dataset containing the data.
-        features (list): A list of feature names (strings) for which to plot histograms.
-        colors (list, optional): A list of colors for each feature. 
-                                  If None, random colors will be generated.
-        save_folder (str, optional): The directory to save the histogram images. Default is "histogram_images".
+        features (list): A list of feature names (strings) to plot histograms for.
+        colors (list, optional): A list of colors for each feature. If None, random colors will be generated.
+        save_folder (str, optional): The folder to save the histogram plots. Default is "Milestone 1/histogram_images".
+        figsize (tuple, optional): The size of each plot. Default is (10, 6).
         
     Returns:
-        None: Each histogram is saved as a separate PNG file in the specified folder.
+        None: Saves each histogram as a PNG file in the specified folder.
     """
     # Standardize column names to lowercase for case-insensitive matching
     data.columns = map(str.lower, data.columns)
@@ -116,11 +72,10 @@ def plot_histograms(data, features, colors=None, save_folder="histogram_images")
     os.makedirs(save_folder, exist_ok=True)
 
     # Loop through each feature and plot its histogram with KDE
-    for i, feature in enumerate(features_lower):
+    for feature in features_lower:
         if feature in data.columns:
-            # Create a new figure for each histogram
-            plt.figure(figsize=(10, 6))
-            color = colors[i]  # Select the color for the current feature
+            plt.figure(figsize=figsize)
+            color = colors[features_lower.index(feature)]  # Select the color for the current feature
             
             # Plot the histogram with KDE
             sns.histplot(data[feature], bins=10, kde=True, color=color)
@@ -130,12 +85,12 @@ def plot_histograms(data, features, colors=None, save_folder="histogram_images")
 
             # Save the plot as a PNG file
             plot_path = os.path.join(save_folder, f"{feature}_histogram.png")
-            plt.savefig(plot_path)
+            plt.savefig(plot_path, bbox_inches='tight')
             plt.close()  # Close the plot to avoid overlap with the next one
         else:
             print(f"Warning: Column '{feature}' is missing from the dataset. Skipping this feature.")
 
-    print(f"Histograms have been saved to the '{save_folder}' folder.")
+    print(f"Histograms saved in '{save_folder}'")
 
 
 def plot_pairplots(data, features, hue=None, save_folder="pairplot_images",graph_Name="pairplot"):

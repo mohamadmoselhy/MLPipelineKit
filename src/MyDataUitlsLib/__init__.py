@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import logging
 from sklearn.preprocessing import LabelEncoder
+import os
 
 def make_prediction(user_input, ModelPath, ScalerPath):
     """
@@ -144,135 +145,170 @@ def load_data(file_path: str):
     
     return df
 
-def check_data_for_preprocessing(df: pd.DataFrame):
+def check_data_for_preprocessing(df: pd.DataFrame, verbose: bool = True, return_summary: bool = False, return_text_report: bool = False, show_plots: bool = False):
     """
-    Analyzes the given dataset and provides insights for preprocessing.
-    
-    This function checks:
-    1. Missing values in each column.
-    2. Duplicates in the dataset.
-    3. Data types of each column and suggests conversion if needed.
-    4. Number of unique values in each column for potential categorical features.
-    5. Potentially problematic columns for preprocessing (e.g., constant columns, highly skewed numeric columns).
-    6. Basic statistics for numerical columns to identify outliers or scaling issues.
+    Analyzes the dataset and provides clear, column-specific preprocessing recommendations.
 
     Parameters:
-    - df (pandas.DataFrame): The dataset to analyze.
+    - df (pd.DataFrame): Dataset to analyze.
+    - verbose (bool): If True, prints the analysis summary.
+    - return_summary (bool): If True, returns the insights as a dictionary.
+    - return_text_report (bool): If True, returns the summary as a list of strings for saving to a text file.
+    - show_plots (bool): If True, shows histograms for skewed numeric columns.
 
     Returns:
-    - None (prints insights about the dataset and preprocessing recommendations).
+    - dict, list or None: Depending on the flags, returns insights or text report.
     """
     
-    # 1. Check missing values in each column
-    missing_values = df.isnull().sum()
-    missing_percentage = (missing_values / len(df)) * 100
-    
-    # 2. Check duplicate rows
-    duplicate_rows = df.duplicated().sum()
-    duplicate_percentage = (duplicate_rows / len(df)) * 100
-    
-    # 3. Check the number of unique values in each column to identify categorical columns
-    unique_values = df.nunique()
-    unique_percentage = (unique_values / len(df)) * 100
-    
-    # 4. Identify constant columns (columns with only one unique value)
-    constant_columns = unique_values[unique_values == 1].index
-    
-    # 5. Identify numeric columns for potential outliers or scaling
-    numeric_columns = df.select_dtypes(include=['number']).columns
-    
-    # 6. Identify columns with high cardinality (many unique values) that may need encoding
-    high_cardinality_columns = unique_values[unique_values > 50].index
-    
-    # Output Analysis
-    print("=============================================================================")
-    print(f"Duplicate rows: {duplicate_rows} ({duplicate_percentage:.2f}%)")
-    print("=============================================================================")
-    
-    # 1. Missing data
-    print(f"Missing data in each column (count and percentage):")
-    for col in missing_values.index:
-        print(f"  - {col}: {missing_values[col]} missing values ({missing_percentage[col]:.2f}%)")
-    print("=============================================================================")
+    insights = {}
+    report_lines = []
 
-    # 2. Unique values per column (count and percentage)
-    print(f"Unique values in each column (count and percentage):")
-    for col in unique_values.index:
-        print(f"  - {col}: {unique_values[col]} unique values ({unique_percentage[col]:.2f}%)")
-    print("=============================================================================")
+    # Basic shape
+    shape = df.shape
+    insights['shape'] = shape
+    report_lines.append("="*75)
+    report_lines.append(f"📊 Dataset Shape: {shape}")
     
-    # 3. High cardinality columns (might need encoding or binning)
-    print(f"High cardinality columns (might need encoding or binning):\n{high_cardinality_columns}")
-    print("=============================================================================")
-    
-    # 4. Suggest potential preprocessing actions
-    print("Suggested preprocessing actions:")
-    print("=============================================================================")
-    # Handling missing values
-    if not missing_values[missing_values > 0].empty:
-        print("- Consider filling missing values using imputation or dropping rows/columns with too many missing values.")
-    
-    # Handling data type conversions
-    for col in df.columns:
-        if df[col].dtype == 'object':
-            print(f"- The column '{col}' is of type object, consider encoding it (e.g., one-hot encoding or label encoding).")
-    
-    # Scaling of numeric columns (if needed)
-    skewed_columns = df[numeric_columns].skew().sort_values(ascending=False)
-    print(f"Skewed numeric columns (might need scaling or transformation):\n{skewed_columns[skewed_columns > 1]}\n")
-    
-    print("- Consider scaling numerical features (e.g., Min-Max Scaling, Standardization).")
-    print("- Review constant columns; these might not add value to the analysis or model.")
-    print("- Review high cardinality columns for potential encoding or binning.")
-    print("=============================================================================")
+    # 1. Missing values
+    missing_values = df.isnull().sum()
+    missing_pct = (missing_values / len(df)) * 100
+    missing_cols = missing_values[missing_values > 0].index.tolist()
+    insights['missing_values'] = pd.DataFrame({'Missing Count': missing_values, 'Missing %': missing_pct})
+    insights['missing_cols'] = missing_cols
+
+    # 2. Duplicate rows
+    duplicate_rows = df.duplicated().sum()
+    duplicate_pct = (duplicate_rows / len(df)) * 100
+    insights['duplicate_rows'] = {'Count': duplicate_rows, 'Percentage': duplicate_pct}
+    report_lines.append(f"📌 Duplicate Rows: {duplicate_rows} ({duplicate_pct:.2f}%)")
+    report_lines.append("="*75)
+
+    # 3. Unique values and constants
+    unique_values = df.nunique()
+    constant_columns = unique_values[unique_values == 1].index.tolist()
+    high_cardinality_columns = unique_values[unique_values > 50].index.tolist()
+    insights['unique_values'] = unique_values
+    insights['constant_columns'] = constant_columns
+    insights['high_cardinality_columns'] = high_cardinality_columns
+
+    # 4. Object and mixed types
+    object_cols = df.select_dtypes(include='object').columns.tolist()
+    mixed_types = [col for col in df.columns if df[col].apply(type).nunique() > 1]
+    insights['object_columns'] = object_cols
+    insights['mixed_type_columns'] = mixed_types
+
+    # 5. Numeric and skewed
+    numeric_cols = df.select_dtypes(include=np.number).columns
+    skewness = df[numeric_cols].skew().sort_values(ascending=False)
+    highly_skewed = skewness[skewness > 1].index.tolist()
+    insights['numeric_summary'] = df[numeric_cols].describe().T
+    insights['skewed_columns'] = highly_skewed
+
+    # Report: Missing
+    if missing_cols:
+        report_lines.append("🧹 Handle Missing Values:")
+        for col in missing_cols:
+            report_lines.append(f" - {col}: {missing_values[col]} missing ({missing_pct[col]:.2f}%)")
+    else:
+        report_lines.append("✅ No missing values.")
+    report_lines.append("="*75)
+
+    # Report: Constants
+    if constant_columns:
+        report_lines.append("🗑️ Drop Constant Columns:")
+        for col in constant_columns:
+            report_lines.append(f" - {col}")
+    else:
+        report_lines.append("✅ No constant columns.")
+    report_lines.append("="*75)
+
+    # Report: Categorical
+    if object_cols:
+        report_lines.append("🧾 Encode Categorical Columns:")
+        for col in object_cols:
+            report_lines.append(f" - {col}")
+    else:
+        report_lines.append("✅ No object-type columns.")
+    report_lines.append("="*75)
+
+    # Report: Mixed types
+    if mixed_types:
+        report_lines.append("⚠️ Mixed Type Columns:")
+        for col in mixed_types:
+            report_lines.append(f" - {col}")
+    else:
+        report_lines.append("✅ No mixed-type columns.")
+    report_lines.append("="*75)
+
+    # Report: High Cardinality
+    if high_cardinality_columns:
+        report_lines.append("📊 High Cardinality Columns:")
+        for col in high_cardinality_columns:
+            report_lines.append(f" - {col}: {unique_values[col]} unique values")
+    else:
+        report_lines.append("✅ No high-cardinality columns.")
+    report_lines.append("="*75)
+
+    # Report: Skewed
+    if highly_skewed:
+        report_lines.append("📈 Skewed Numeric Columns:")
+        for col in highly_skewed:
+            report_lines.append(f" - {col}: Skewness = {skewness[col]:.2f}")
+    else:
+        report_lines.append("✅ No highly skewed numeric columns.")
+    report_lines.append("="*75)
+
+    # Report: Summary Actions
+    report_lines.append("✅ Suggested Next Steps:")
+    if missing_cols: report_lines.append(" - Handle missing data.")
+    if constant_columns: report_lines.append(" - Drop constant columns.")
+    if object_cols: report_lines.append(" - Encode categorical features.")
+    if high_cardinality_columns: report_lines.append(" - Consider binning/embedding for high cardinality.")
+    if highly_skewed: report_lines.append(" - Apply transformations to skewed features.")
+    if mixed_types: report_lines.append(" - Resolve inconsistent data types.")
+    report_lines.append("="*75)
+
+    if verbose:
+        for line in report_lines:
+            print(line)
+
+    if show_plots and highly_skewed:
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        for col in highly_skewed:
+            plt.figure(figsize=(6, 3))
+            sns.histplot(df[col].dropna(), kde=True)
+            plt.title(f"Distribution of Skewed Feature: {col}")
+            plt.tight_layout()
+            plt.show()
+
+    if return_text_report:
+        return report_lines
+
+    if return_summary:
+        return insights
+
+    if show_plots and highly_skewed:
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        for col in highly_skewed:
+            plt.figure(figsize=(6, 3))
+            sns.histplot(df[col].dropna(), kde=True)
+            plt.title(f"Distribution of Skewed Feature: {col}")
+            plt.show()
+
+    if return_summary:
+        return insights
 
 class DataFrameStatistics:
     """
     A class to perform various statistical operations on a Pandas DataFrame.
-    
-    Attributes:
-        df (pd.DataFrame): The DataFrame on which statistical operations will be performed.
-    
-    Methods:
-        missing_data_info() -> pd.DataFrame:
-            Returns a DataFrame containing the count and percentage of missing data for each column.
-        
-        duplicate_info() -> pd.DataFrame:
-            Returns the count and percentage of duplicate rows in the DataFrame.
-        
-        data_info() -> None:
-            Prints the DataFrame information, including data types and non-null counts for columns.
-        
-        shape() -> tuple:
-            Returns the shape (rows, columns) of the DataFrame.
-        
-        unique_values_info() -> pd.DataFrame:
-            Returns the count and percentage of unique values for each column.
-        
-        describe() -> pd.DataFrame:
-            Returns the descriptive statistics for the numerical columns in the DataFrame.
-        
-        statistics() -> None:
-            Prints a summary of missing data, duplicate count, data info, shape, unique values, 
-            and descriptive statistics.
     """
-    
-    def __init__(self, df: pd.DataFrame):
-        """
-        Initializes the DataFrameStatistics class with the provided DataFrame.
 
-        Args:
-            df (pd.DataFrame): The DataFrame to analyze.
-        """
+    def __init__(self, df: pd.DataFrame):
         self.df = df
 
     def missing_data_info(self) -> pd.DataFrame:
-        """
-        Calculates the count and percentage of missing values for each column in the DataFrame.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the count and percentage of missing values for each column.
-        """
         missing_count = self.df.isnull().sum()
         missing_percentage = (missing_count / len(self.df)) * 100
         return pd.DataFrame({
@@ -281,12 +317,6 @@ class DataFrameStatistics:
         })
 
     def duplicate_info(self) -> pd.DataFrame:
-        """
-        Calculates the count and percentage of duplicate rows in the DataFrame.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the duplicate row count and percentage.
-        """
         duplicate_rows = self.df.duplicated().sum()
         duplicate_percentage = (duplicate_rows / len(self.df)) * 100
         return pd.DataFrame({
@@ -295,28 +325,12 @@ class DataFrameStatistics:
         })
 
     def data_info(self) -> None:
-        """
-        Prints the summary of the DataFrame, including the data types and the count of non-null values 
-        for each column.
-        """
         print(self.df.info())
 
     def shape(self) -> tuple:
-        """
-        Returns the shape of the DataFrame (number of rows and columns).
-
-        Returns:
-            tuple: A tuple representing the shape of the DataFrame (rows, columns).
-        """
         return self.df.shape
 
     def unique_values_info(self) -> pd.DataFrame:
-        """
-        Calculates the count and percentage of unique values for each column in the DataFrame.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing the count and percentage of unique values for each column.
-        """
         unique_values = self.df.nunique()
         unique_percentage = (unique_values / len(self.df)) * 100
         return pd.DataFrame({
@@ -325,40 +339,53 @@ class DataFrameStatistics:
         }).sort_values(by='Unique Count')
 
     def describe(self) -> pd.DataFrame:
-        """
-        Returns the descriptive statistics for the numerical columns in the DataFrame.
-        
-        Descriptive statistics include count, mean, standard deviation, min, max, 25th, 50th, and 75th percentiles.
-
-        Returns:
-            pd.DataFrame: A DataFrame containing descriptive statistics for numerical columns.
-        """
         return self.df.describe()
 
     def statistics(self) -> None:
-        """
-        Prints a comprehensive summary of the DataFrame's statistics, including missing data percentage,
-        duplicate row count, data info, shape, unique values, and descriptive statistics.
-        """
-        print("=============================================================================")
+        print("="*75)
         print("Missing Data Info (count and percentage):")
         print(self.missing_data_info())
-        print("=============================================================================")
+        print("="*75)
         print("\nDuplicate Row Info (count and percentage):")
         print(self.duplicate_info())
-        print("=============================================================================")
+        print("="*75)
         print("\nData Info:")
-        self.data_info()  # This method prints the info directly
-        print("=============================================================================")
+        self.data_info()
+        print("="*75)
         print("\nShape of DataFrame:")
         print(self.shape())
-        print("=============================================================================")
+        print("="*75)
         print("\nUnique Values Info (count and percentage):")
         print(self.unique_values_info())
-        print("=============================================================================")
+        print("="*75)
         print("\nDescriptive Statistics (for numerical columns):")
         print(self.describe())
-        print("=============================================================================")
+        print("="*75)
+
+    def generate_report_lines(self) -> list:
+        lines = []
+        lines.append("="*75)
+        lines.append("📌 Missing Data Info (count and percentage):")
+        lines.append(str(self.missing_data_info()))
+        lines.append("="*75)
+
+        lines.append("\n📌 Duplicate Row Info (count and percentage):")
+        lines.append(str(self.duplicate_info()))
+        lines.append("="*75)
+
+        lines.append("\n📌 Shape of DataFrame:")
+        lines.append(str(self.shape()))
+        lines.append("="*75)
+
+        lines.append("\n📌 Unique Values Info (count and percentage):")
+        lines.append(str(self.unique_values_info()))
+        lines.append("="*75)
+
+        lines.append("\n📌 Descriptive Statistics (for numerical columns):")
+        lines.append(str(self.describe()))
+        lines.append("="*75)
+
+        return lines
 
 def standardize_column_headers(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -608,11 +635,41 @@ def save_to_csv(data, filename):
     Args:
         data (dict or list of dicts): Data to be saved in the CSV file.
         filename (str): The name of the CSV file where data will be saved.
+        
+    Returns:
+        str: Full path of the saved CSV file.
     """
     # Convert the data into a DataFrame (if it is not already a DataFrame)
     if not isinstance(data, pd.DataFrame):
         data = pd.DataFrame(data)
     
+    # Get the absolute path of the filename
+    full_path = os.path.abspath(filename)
+    
     # Save the DataFrame to a CSV file
-    data.to_csv(filename, index=False)
-    print(f"Data has been saved to {filename}")
+    data.to_csv(full_path, index=False)
+    
+    # Print confirmation
+    print(f"Data has been saved to {full_path}")
+    
+    # Return the full path of the saved file
+    return full_path
+
+
+def write_to_text_file(data, filename='output.txt'):
+    """
+    Writes the given data to a text file.
+
+    Parameters:
+    - data (str or list): Text content to write. If a list, each item will be a new line.
+    - filename (str): Name of the file to write to (default is 'output.txt').
+
+    Returns:
+    - None
+    """
+    with open(filename, 'w', encoding='utf-8') as file:
+        if isinstance(data, list):
+            file.write('\n'.join(str(line) for line in data))
+        else:
+            file.write(str(data))
+    print(f" Data written to {filename}")
