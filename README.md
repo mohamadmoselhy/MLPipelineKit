@@ -26,25 +26,6 @@ MachineLearningIbirary/
 └── library_documentation.md # Extended technical documentation
 ```
 
-## 🛠️ Requirements
-
-- Python 3.8+
-- scikit-learn
-- pandas
-- numpy
-
-Install dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-## 🧪 How to Use
-
-```python
-from src.train import train_model
-from src.evaluate import evaluate_model
-from src.predict import make_prediction
-```
 
 See example usage and inputs in the `library_documentation.md`.
 
