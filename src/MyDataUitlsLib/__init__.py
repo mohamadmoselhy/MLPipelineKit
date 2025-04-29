@@ -5,6 +5,9 @@ import pandas as pd
 import logging
 from sklearn.preprocessing import LabelEncoder
 import os
+from sklearn.preprocessing import PolynomialFeatures
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 def make_prediction(user_input, ModelPath, ScalerPath):
     """
@@ -63,45 +66,6 @@ def make_prediction(user_input, ModelPath, ScalerPath):
         logging.error(f"Error occurred during prediction: {e}")
         raise  # Rethrow the error after logging it
 
-def get_user_input():
-    """
-    Collects input data from the user in both English and Arabic.
-    Returns the user input as a dictionary.
-    """
-    # Create inputs for all required features (English and Arabic)
-    bedrooms = st.number_input("Number of Bedrooms: / عدد الغرف:", min_value=1, max_value=50)
-    bathrooms = st.number_input("Number of Bathrooms: / عدد الحمامات:", min_value=1, max_value=10)
-    sqft_living = st.number_input("Square Footage of Living Area (sqft): / مساحة المنطقة السكنية (قدم مربع):", min_value=200, max_value=10000)
-    floors = st.number_input("Number of Floors: / عدد الطوابق:", min_value=1, max_value=5)
-    waterfront = st.selectbox("Waterfront (1 = Yes, 0 = No): / بالقرب من الماء (1 = نعم، 0 = لا):", [0, 1])
-    view = st.selectbox("View Quality (0 to 4): / جودة الإطلالة (من 0 إلى 4):", [0, 1, 2, 3, 4])
-    condition = st.selectbox("Condition (1 to 5): / الحالة (من 1 إلى 5):", [1, 2, 3, 4, 5])
-    grade = st.selectbox("Grade (1 to 13): / الدرجة (من 1 إلى 13):", [i for i in range(1, 14)])
-    yr_built = st.number_input("Year Built: / سنة البناء:", min_value=1900, max_value=2025)
-    Renovated = st.selectbox("Renovated (1 = Yes, 0 = No): / تم تجديده (1 = نعم، 0 = لا):", [0, 1])
-    sqft_lot = st.number_input("Lot Size (sqft): / حجم الأرض (قدم مربع):", min_value=500, max_value=100000)
-    sqft_above = st.number_input("Square Footage of Area Above Ground (sqft): / مساحة المنطقة فوق الأرض (قدم مربع):", min_value=100, max_value=10000)
-    sqft_basement = st.number_input("Square Footage of Basement (sqft): / مساحة الطابق السفلي (قدم مربع):", min_value=0, max_value=5000)
-
-    # Create the feature array for prediction
-    user_input = {
-        'bedrooms': bedrooms,
-        'bathrooms': bathrooms,
-        'sqft_living': sqft_living,
-        'floors': floors,
-        'waterfront': waterfront,
-        'view': view,
-        'condition': condition,
-        'grade': grade,
-        'yr_built': yr_built,
-        'Renovated':Renovated,
-        'sqft_lot': sqft_lot,
-        'sqft_above': sqft_above,
-        'sqft_basement': sqft_basement
-    }
-
-    return user_input
-
 def load_data(file_path: str):
     """
     Loads a CSV file into a pandas DataFrame and processes the data.
@@ -145,142 +109,153 @@ def load_data(file_path: str):
     
     return df
 
-def check_data_for_preprocessing(df: pd.DataFrame, verbose: bool = True, return_summary: bool = False, return_text_report: bool = False, show_plots: bool = False):
+def check_data_for_preprocessing(
+    df: pd.DataFrame, 
+    verbose: bool = True, 
+    return_summary: bool = False, 
+    return_text_report: bool = False, 
+    show_plots: bool = False,
+    top_n_unique: int = 3
+):
     """
-    Analyzes the dataset and provides clear, column-specific preprocessing recommendations.
+    Analyzes a dataset and provides preprocessing recommendations with optional summaries, text reports, and plots.
 
     Parameters:
     - df (pd.DataFrame): Dataset to analyze.
-    - verbose (bool): If True, prints the analysis summary.
-    - return_summary (bool): If True, returns the insights as a dictionary.
-    - return_text_report (bool): If True, returns the summary as a list of strings for saving to a text file.
-    - show_plots (bool): If True, shows histograms for skewed numeric columns.
+    - verbose (bool): Print the analysis summary if True.
+    - return_summary (bool): Return insights as a dictionary if True.
+    - return_text_report (bool): Return the report as a list of strings if True.
+    - show_plots (bool): Display histograms for highly skewed numeric columns if True.
+    - top_n_unique (int): Number of top frequent values to show for categorical columns.
 
     Returns:
-    - dict, list or None: Depending on the flags, returns insights or text report.
+    - dict or list or None: Depending on the flags.
     """
-    
+
     insights = {}
     report_lines = []
 
-    # Basic shape
+    # 0. Basic Shape
     shape = df.shape
     insights['shape'] = shape
-    report_lines.append("="*75)
-    report_lines.append(f"📊 Dataset Shape: {shape}")
-    
-    # 1. Missing values
+    report_lines.append("="*90)
+    report_lines.append(f" Dataset Shape: {shape[0]} rows × {shape[1]} columns")
+    report_lines.append("="*90)
+
+    # 1. Missing Values
     missing_values = df.isnull().sum()
     missing_pct = (missing_values / len(df)) * 100
     missing_cols = missing_values[missing_values > 0].index.tolist()
-    insights['missing_values'] = pd.DataFrame({'Missing Count': missing_values, 'Missing %': missing_pct})
-    insights['missing_cols'] = missing_cols
+    insights['missing_values'] = missing_values.to_dict()
+    insights['missing_percentage'] = missing_pct.to_dict()
+    insights['missing_columns'] = missing_cols
 
-    # 2. Duplicate rows
-    duplicate_rows = df.duplicated().sum()
-    duplicate_pct = (duplicate_rows / len(df)) * 100
-    insights['duplicate_rows'] = {'Count': duplicate_rows, 'Percentage': duplicate_pct}
-    report_lines.append(f"📌 Duplicate Rows: {duplicate_rows} ({duplicate_pct:.2f}%)")
-    report_lines.append("="*75)
-
-    # 3. Unique values and constants
-    unique_values = df.nunique()
-    constant_columns = unique_values[unique_values == 1].index.tolist()
-    high_cardinality_columns = unique_values[unique_values > 50].index.tolist()
-    insights['unique_values'] = unique_values
-    insights['constant_columns'] = constant_columns
-    insights['high_cardinality_columns'] = high_cardinality_columns
-
-    # 4. Object and mixed types
-    object_cols = df.select_dtypes(include='object').columns.tolist()
-    mixed_types = [col for col in df.columns if df[col].apply(type).nunique() > 1]
-    insights['object_columns'] = object_cols
-    insights['mixed_type_columns'] = mixed_types
-
-    # 5. Numeric and skewed
-    numeric_cols = df.select_dtypes(include=np.number).columns
-    skewness = df[numeric_cols].skew().sort_values(ascending=False)
-    highly_skewed = skewness[skewness > 1].index.tolist()
-    insights['numeric_summary'] = df[numeric_cols].describe().T
-    insights['skewed_columns'] = highly_skewed
-
-    # Report: Missing
     if missing_cols:
-        report_lines.append("🧹 Handle Missing Values:")
+        report_lines.append(" Handle Missing Values:")
         for col in missing_cols:
             report_lines.append(f" - {col}: {missing_values[col]} missing ({missing_pct[col]:.2f}%)")
     else:
-        report_lines.append("✅ No missing values.")
-    report_lines.append("="*75)
+        report_lines.append(" No missing values found.")
+    report_lines.append("="*90)
 
-    # Report: Constants
+    # 2. Duplicate Rows
+    duplicate_rows = df.duplicated().sum()
+    duplicate_pct = (duplicate_rows / len(df)) * 100
+    insights['duplicate_rows'] = {'count': duplicate_rows, 'percentage': duplicate_pct}
+    report_lines.append(f" Duplicate Rows: {duplicate_rows} ({duplicate_pct:.2f}%)")
+    report_lines.append("="*90)
+
+    # 3. Unique Values & Constant Columns
+    unique_values = df.nunique()
+    constant_columns = unique_values[unique_values == 1].index.tolist()
+    high_cardinality_columns = unique_values[unique_values > 50].index.tolist()
+    insights['unique_values_per_column'] = unique_values.to_dict()
+    insights['constant_columns'] = constant_columns
+    insights['high_cardinality_columns'] = high_cardinality_columns
+
     if constant_columns:
-        report_lines.append("🗑️ Drop Constant Columns:")
-        for col in constant_columns:
-            report_lines.append(f" - {col}")
+        report_lines.append(" Drop Constant Columns (only one unique value):")
+        report_lines.extend([f" - {col}" for col in constant_columns])
     else:
-        report_lines.append("✅ No constant columns.")
-    report_lines.append("="*75)
+        report_lines.append(" No constant columns found.")
+    report_lines.append("="*90)
 
-    # Report: Categorical
-    if object_cols:
-        report_lines.append("🧾 Encode Categorical Columns:")
-        for col in object_cols:
-            report_lines.append(f" - {col}")
-    else:
-        report_lines.append("✅ No object-type columns.")
-    report_lines.append("="*75)
-
-    # Report: Mixed types
-    if mixed_types:
-        report_lines.append("⚠️ Mixed Type Columns:")
-        for col in mixed_types:
-            report_lines.append(f" - {col}")
-    else:
-        report_lines.append("✅ No mixed-type columns.")
-    report_lines.append("="*75)
-
-    # Report: High Cardinality
     if high_cardinality_columns:
-        report_lines.append("📊 High Cardinality Columns:")
-        for col in high_cardinality_columns:
-            report_lines.append(f" - {col}: {unique_values[col]} unique values")
+        report_lines.append(" High Cardinality Columns (>50 unique values):")
+        report_lines.extend([f" - {col}: {unique_values[col]} unique values" for col in high_cardinality_columns])
     else:
-        report_lines.append("✅ No high-cardinality columns.")
-    report_lines.append("="*75)
+        report_lines.append(" No high-cardinality columns found.")
+    report_lines.append("="*90)
 
-    # Report: Skewed
+    # 4. Object Columns and Mixed Types
+    object_cols = df.select_dtypes(include='object').columns.tolist()
+    mixed_type_columns = [col for col in df.columns if df[col].apply(type).nunique() > 1]
+    insights['object_columns'] = object_cols
+    insights['mixed_type_columns'] = mixed_type_columns
+
+    if object_cols:
+        report_lines.append(" Categorical (object) Columns for Encoding:")
+        for col in object_cols:
+            top_values = df[col].value_counts().head(top_n_unique)
+            top_values_text = ', '.join([f"{k} ({v})" for k, v in top_values.items()])
+            report_lines.append(f" - {col}: {top_values_text}")
+    else:
+        report_lines.append(" No categorical (object) columns found.")
+    report_lines.append("="*90)
+
+    if mixed_type_columns:
+        report_lines.append(" Columns with Mixed Data Types:")
+        report_lines.extend([f" - {col}" for col in mixed_type_columns])
+    else:
+        report_lines.append(" No mixed-type columns detected.")
+    report_lines.append("="*90)
+
+    # 5. Numeric Columns & Skewness
+    numeric_cols = df.select_dtypes(include=np.number).columns
+    skewness = df[numeric_cols].skew().sort_values(ascending=False)
+    highly_skewed = skewness[skewness.abs() > 1].index.tolist()
+    insights['numeric_summary'] = df[numeric_cols].describe().T.to_dict()
+    insights['highly_skewed_columns'] = {col: skewness[col] for col in highly_skewed}
+
     if highly_skewed:
-        report_lines.append("📈 Skewed Numeric Columns:")
+        report_lines.append(" Highly Skewed Numeric Columns (|skew| > 1):")
         for col in highly_skewed:
             report_lines.append(f" - {col}: Skewness = {skewness[col]:.2f}")
     else:
-        report_lines.append("✅ No highly skewed numeric columns.")
-    report_lines.append("="*75)
+        report_lines.append(" No highly skewed numeric columns found.")
+    report_lines.append("="*90)
 
-    # Report: Summary Actions
-    report_lines.append("✅ Suggested Next Steps:")
-    if missing_cols: report_lines.append(" - Handle missing data.")
+    # 6. Memory Usage
+    memory_usage = df.memory_usage(deep=True).sum() / (1024**2)
+    insights['memory_usage_MB'] = memory_usage
+    report_lines.append(f" Memory Usage: {memory_usage:.2f} MB")
+    report_lines.append("="*90)
+
+    # 7. Suggested Next Steps
+    report_lines.append(" Suggested Next Steps for Preprocessing:")
+    if missing_cols: report_lines.append(" - Handle missing values (impute/drop).")
     if constant_columns: report_lines.append(" - Drop constant columns.")
-    if object_cols: report_lines.append(" - Encode categorical features.")
-    if high_cardinality_columns: report_lines.append(" - Consider binning/embedding for high cardinality.")
-    if highly_skewed: report_lines.append(" - Apply transformations to skewed features.")
-    if mixed_types: report_lines.append(" - Resolve inconsistent data types.")
-    report_lines.append("="*75)
+    if object_cols: report_lines.append(" - Encode categorical variables.")
+    if high_cardinality_columns: report_lines.append(" - Consider reducing cardinality.")
+    if highly_skewed: report_lines.append(" - Apply transformations (log, box-cox, etc.) to skewed features.")
+    if mixed_type_columns: report_lines.append(" - Standardize mixed-type columns.")
+    report_lines.append("="*90)
 
-    if verbose:
-        for line in report_lines:
-            print(line)
-
+    # 8. Show Plots
     if show_plots and highly_skewed:
-        import matplotlib.pyplot as plt
-        import seaborn as sns
         for col in highly_skewed:
             plt.figure(figsize=(6, 3))
             sns.histplot(df[col].dropna(), kde=True)
             plt.title(f"Distribution of Skewed Feature: {col}")
+            plt.xlabel(col)
+            plt.ylabel("Frequency")
             plt.tight_layout()
             plt.show()
+
+    # 9. Output Control
+    if verbose:
+        for line in report_lines:
+            print(line)
 
     if return_text_report:
         return report_lines
@@ -288,25 +263,25 @@ def check_data_for_preprocessing(df: pd.DataFrame, verbose: bool = True, return_
     if return_summary:
         return insights
 
-    if show_plots and highly_skewed:
-        import matplotlib.pyplot as plt
-        import seaborn as sns
-        for col in highly_skewed:
-            plt.figure(figsize=(6, 3))
-            sns.histplot(df[col].dropna(), kde=True)
-            plt.title(f"Distribution of Skewed Feature: {col}")
-            plt.show()
-
-    if return_summary:
-        return insights
 
 class DataFrameStatistics:
     """
-    A class to perform various statistical operations on a Pandas DataFrame.
+    A class to perform various statistical operations and validation on a Pandas DataFrame.
     """
 
     def __init__(self, df: pd.DataFrame):
-        self.df = df
+        self.df = df.copy()
+
+    def validate_input(self) -> dict:
+        validations = {}
+        validations['is_empty'] = self.df.empty
+        validations['duplicated_columns'] = self.df.columns[self.df.columns.duplicated()].tolist()
+        validations['constant_columns'] = [col for col in self.df.columns if self.df[col].nunique() <= 1]
+        validations['mixed_type_columns'] = [
+            col for col in self.df.columns 
+            if self.df[col].apply(type).nunique() > 1
+        ]
+        return validations
 
     def missing_data_info(self) -> pd.DataFrame:
         missing_count = self.df.isnull().sum()
@@ -341,16 +316,48 @@ class DataFrameStatistics:
     def describe(self) -> pd.DataFrame:
         return self.df.describe()
 
+    def data_types_info(self) -> pd.DataFrame:
+        return pd.DataFrame(self.df.dtypes, columns=['Data Type'])
+
+    def top_frequent_values(self, top_n=3) -> dict:
+        frequent_values = {}
+        for col in self.df.select_dtypes(include=['object', 'category']).columns:
+            frequent_values[col] = self.df[col].value_counts().head(top_n).to_dict()
+        return frequent_values
+
+    def outlier_info(self) -> dict:
+        outlier_summary = {}
+        numeric_cols = self.df.select_dtypes(include=[np.number]).columns
+        for col in numeric_cols:
+            q1 = self.df[col].quantile(0.25)
+            q3 = self.df[col].quantile(0.75)
+            iqr = q3 - q1
+            lower = q1 - 1.5 * iqr
+            upper = q3 + 1.5 * iqr
+            outliers = self.df[(self.df[col] < lower) | (self.df[col] > upper)]
+            outlier_summary[col] = {
+                'Outlier Count': outliers.shape[0],
+                'Outlier Percentage': (outliers.shape[0] / len(self.df)) * 100
+            }
+        return outlier_summary
+
+    def memory_usage_info(self) -> str:
+        mem_usage = self.df.memory_usage(deep=True).sum() / (1024 ** 2)
+        return f"Total memory usage: {mem_usage:.2f} MB"
+
     def statistics(self) -> None:
         print("="*75)
-        print("Missing Data Info (count and percentage):")
+        print("Validation Results:")
+        print(self.validate_input())
+        print("="*75)
+        print("\nMissing Data Info (count and percentage):")
         print(self.missing_data_info())
         print("="*75)
         print("\nDuplicate Row Info (count and percentage):")
         print(self.duplicate_info())
         print("="*75)
-        print("\nData Info:")
-        self.data_info()
+        print("\nData Types Info:")
+        print(self.data_types_info())
         print("="*75)
         print("\nShape of DataFrame:")
         print(self.shape())
@@ -358,34 +365,36 @@ class DataFrameStatistics:
         print("\nUnique Values Info (count and percentage):")
         print(self.unique_values_info())
         print("="*75)
+        print("\nTop Frequent Values (for categorical columns):")
+        print(self.top_frequent_values())
+        print("="*75)
+        print("\nOutlier Info (for numeric columns):")
+        print(self.outlier_info())
+        print("="*75)
+        print("\nMemory Usage:")
+        print(self.memory_usage_info())
+        print("="*75)
         print("\nDescriptive Statistics (for numerical columns):")
         print(self.describe())
         print("="*75)
 
-    def generate_report_lines(self) -> list:
-        lines = []
-        lines.append("="*75)
-        lines.append("📌 Missing Data Info (count and percentage):")
-        lines.append(str(self.missing_data_info()))
-        lines.append("="*75)
+    def generate_report(self) -> dict:
+        """
+        Generate all statistics in a structured dictionary format for easy export.
+        """
+        return {
+            "Validation": self.validate_input(),
+            "MissingData": self.missing_data_info().to_dict(),
+            "DuplicateInfo": self.duplicate_info().to_dict(),
+            "DataTypes": self.data_types_info().to_dict(),
+            "Shape": self.shape(),
+            "UniqueValues": self.unique_values_info().to_dict(),
+            "TopFrequentValues": self.top_frequent_values(),
+            "Outliers": self.outlier_info(),
+            "MemoryUsage": self.memory_usage_info(),
+            "Describe": self.describe().to_dict()
+        }
 
-        lines.append("\n📌 Duplicate Row Info (count and percentage):")
-        lines.append(str(self.duplicate_info()))
-        lines.append("="*75)
-
-        lines.append("\n📌 Shape of DataFrame:")
-        lines.append(str(self.shape()))
-        lines.append("="*75)
-
-        lines.append("\n📌 Unique Values Info (count and percentage):")
-        lines.append(str(self.unique_values_info()))
-        lines.append("="*75)
-
-        lines.append("\n📌 Descriptive Statistics (for numerical columns):")
-        lines.append(str(self.describe()))
-        lines.append("="*75)
-
-        return lines
 
 def standardize_column_headers(df: pd.DataFrame) -> pd.DataFrame:
     """
@@ -570,30 +579,34 @@ def handle_missing_values(df: pd.DataFrame, strategy: str = 'drop', fill_value=N
 
 def encode_column(data, column_name, encoding_type="onehot"):
     """
-    Encodes the specified column in the dataframe based on the encoding type.
-    
+    Encodes the specified column in the dataframe based on the encoding type,
+    and creates a new column(s) instead of replacing the original one.
+
     Parameters:
     - data: pandas DataFrame
     - column_name: str, the name of the column to be encoded
     - encoding_type: str, encoding method - either 'onehot' or 'label'. Default is 'onehot'.
-    
+
     Returns:
-    - Encoded dataframe or Series
+    - DataFrame with new encoded column(s)
     """
     
     # Ensure the column exists in the dataframe
     if column_name not in data.columns:
         raise ValueError(f"Column '{column_name}' not found in the DataFrame")
     
+    data = data.copy()  # To avoid modifying the original dataframe
+
     if encoding_type == "label":
-        # Label Encoding: Convert categories to integers
         label_encoder = LabelEncoder()
-        data[column_name] = label_encoder.fit_transform(data[column_name])
-        
+        new_col = f"{column_name}label"
+        data[new_col] = label_encoder.fit_transform(data[column_name])
+
     elif encoding_type == "onehot":
-        # One-Hot Encoding: Create binary columns for each category
-        data = pd.get_dummies(data, columns=[column_name], drop_first=False)
-        
+        onehot_df = pd.get_dummies(data[column_name], prefix=column_name, prefix_sep='', drop_first=False)
+        onehot_df.columns = onehot_df.columns.str.lower()  # Make new column names lowercase
+        data = pd.concat([data, onehot_df], axis=1)
+
     else:
         raise ValueError("Invalid encoding_type. Choose either 'label' or 'onehot'.")
     
@@ -655,7 +668,6 @@ def save_to_csv(data, filename):
     # Return the full path of the saved file
     return full_path
 
-
 def write_to_text_file(data, filename='output.txt'):
     """
     Writes the given data to a text file.
@@ -673,3 +685,166 @@ def write_to_text_file(data, filename='output.txt'):
         else:
             file.write(str(data))
     print(f" Data written to {filename}")
+
+def feature_engineering(df: pd.DataFrame, target_column: str = None) -> pd.DataFrame:
+    """
+    Performs advanced feature engineering on the dataset.
+    
+    This function:
+    1. Creates interaction features between numeric columns
+    2. Generates polynomial features
+    3. Creates time-based features for datetime columns
+    4. Handles categorical feature interactions
+    
+    Parameters:
+    - df (pd.DataFrame): Input DataFrame
+    - target_column (str, optional): Target column name for feature importance
+    
+    Returns:
+    - pd.DataFrame: DataFrame with engineered features
+    """
+    df_engineered = df.copy()
+    
+    # Get numeric columns
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    
+    # Create interaction features
+    for i in range(len(numeric_cols)):
+        for j in range(i+1, len(numeric_cols)):
+            col1, col2 = numeric_cols[i], numeric_cols[j]
+            df_engineered[f'{col1}_x_{col2}'] = df[col1] * df[col2]
+            df_engineered[f'{col1}_div_{col2}'] = df[col1] / df[col2]
+    
+    # Create polynomial features
+    poly = PolynomialFeatures(degree=2, include_bias=False)
+    poly_features = poly.fit_transform(df[numeric_cols])
+    poly_cols = [f'poly_{i}' for i in range(poly_features.shape[1])]
+    df_poly = pd.DataFrame(poly_features, columns=poly_cols)
+    df_engineered = pd.concat([df_engineered, df_poly], axis=1)
+    
+    # Handle datetime columns
+    datetime_cols = df.select_dtypes(include=['datetime64']).columns
+    for col in datetime_cols:
+        df_engineered[f'{col}_year'] = df[col].dt.year
+        df_engineered[f'{col}_month'] = df[col].dt.month
+        df_engineered[f'{col}_day'] = df[col].dt.day
+        df_engineered[f'{col}_dayofweek'] = df[col].dt.dayofweek
+    
+    return df_engineered
+
+def validate_data(df: pd.DataFrame, schema: dict) -> dict:
+    """
+    Validates data against a predefined schema.
+    
+    Parameters:
+    - df (pd.DataFrame): Input DataFrame
+    - schema (dict): Dictionary defining expected data types and constraints
+    
+    Returns:
+    - dict: Dictionary containing validation results and errors
+    """
+    validation_results = {
+        'is_valid': True,
+        'errors': [],
+        'warnings': []
+    }
+    
+    # Check column existence
+    missing_cols = set(schema.keys()) - set(df.columns)
+    if missing_cols:
+        validation_results['is_valid'] = False
+        validation_results['errors'].append(f"Missing columns: {missing_cols}")
+    
+    # Check data types
+    for col, expected_type in schema.items():
+        if col in df.columns:
+            actual_type = str(df[col].dtype)
+            if expected_type != actual_type:
+                validation_results['is_valid'] = False
+                validation_results['errors'].append(
+                    f"Column {col}: Expected type {expected_type}, got {actual_type}"
+                )
+    
+    # Check for null values
+    null_counts = df.isnull().sum()
+    if null_counts.any():
+        validation_results['warnings'].append(
+            f"Columns with null values: {null_counts[null_counts > 0].to_dict()}"
+        )
+    
+    return validation_results
+
+def detect_anomalies(df: pd.DataFrame, method: str = 'zscore', threshold: float = 3.0) -> pd.DataFrame:
+    """
+    Detects anomalies in the dataset using various methods.
+    
+    Parameters:
+    - df (pd.DataFrame): Input DataFrame
+    - method (str): Method to use for anomaly detection ('zscore', 'iqr', 'isolation_forest')
+    - threshold (float): Threshold for anomaly detection
+    
+    Returns:
+    - pd.DataFrame: DataFrame with anomaly flags
+    """
+    from sklearn.ensemble import IsolationForest
+    import numpy as np
+    
+    numeric_cols = df.select_dtypes(include=[np.number]).columns
+    anomalies = pd.DataFrame(index=df.index)
+    
+    if method == 'zscore':
+        for col in numeric_cols:
+            z_scores = np.abs((df[col] - df[col].mean()) / df[col].std())
+            anomalies[f'{col}_anomaly'] = z_scores > threshold
+            
+    elif method == 'iqr':
+        for col in numeric_cols:
+            Q1 = df[col].quantile(0.25)
+            Q3 = df[col].quantile(0.75)
+            IQR = Q3 - Q1
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            anomalies[f'{col}_anomaly'] = (df[col] < lower_bound) | (df[col] > upper_bound)
+            
+    elif method == 'isolation_forest':
+        iso_forest = IsolationForest(contamination=0.1, random_state=42)
+        for col in numeric_cols:
+            anomalies[f'{col}_anomaly'] = iso_forest.fit_predict(df[[col]]) == -1
+            
+    return anomalies
+
+def create_time_series_features(df: pd.DataFrame, date_column: str, target_column: str) -> pd.DataFrame:
+    """
+    Creates time series features from a datetime column.
+    
+    Parameters:
+    - df (pd.DataFrame): Input DataFrame
+    - date_column (str): Name of the datetime column
+    - target_column (str): Name of the target column
+    
+    Returns:
+    - pd.DataFrame: DataFrame with time series features
+    """
+    df_ts = df.copy()
+    
+    # Basic time features
+    df_ts[f'{date_column}_year'] = df[date_column].dt.year
+    df_ts[f'{date_column}_month'] = df[date_column].dt.month
+    df_ts[f'{date_column}_day'] = df[date_column].dt.day
+    df_ts[f'{date_column}_dayofweek'] = df[date_column].dt.dayofweek
+    df_ts[f'{date_column}_quarter'] = df[date_column].dt.quarter
+    
+    # Lag features
+    for lag in [1, 7, 30]:
+        df_ts[f'{target_column}_lag_{lag}'] = df[target_column].shift(lag)
+    
+    # Rolling statistics
+    for window in [7, 30]:
+        df_ts[f'{target_column}_rolling_mean_{window}'] = df[target_column].rolling(window=window).mean()
+        df_ts[f'{target_column}_rolling_std_{window}'] = df[target_column].rolling(window=window).std()
+    
+    # Expanding statistics
+    df_ts[f'{target_column}_expanding_mean'] = df[target_column].expanding().mean()
+    df_ts[f'{target_column}_expanding_std'] = df[target_column].expanding().std()
+    
+    return df_ts

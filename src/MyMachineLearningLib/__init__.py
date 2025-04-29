@@ -1,10 +1,24 @@
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.preprocessing import StandardScaler
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression, Ridge, Lasso, ElasticNet, LogisticRegression
+from sklearn.tree import DecisionTreeRegressor, DecisionTreeClassifier
+from sklearn.ensemble import (
+    RandomForestRegressor, RandomForestClassifier,
+    GradientBoostingRegressor, GradientBoostingClassifier
+)
+from sklearn.svm import SVR, SVC
+from sklearn.neighbors import KNeighborsRegressor, KNeighborsClassifier
+from sklearn.naive_bayes import GaussianNB, MultinomialNB
+from sklearn.neural_network import MLPRegressor, MLPClassifier
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-import joblib
+
+from xgboost import XGBRegressor, XGBClassifier
+from lightgbm import LGBMRegressor, LGBMClassifier
+
 import numpy as np
+import joblib
 from datetime import datetime
+
 
 def calculate_regression_metrics(y_test, y_predict):
     """
@@ -32,109 +46,499 @@ def calculate_regression_metrics(y_test, y_predict):
     
     return mse, mae, r2
 
-def prepare_and_train_linear_regression_model(x, y, test_size=0.3, shuffle=True, random_state=0):
-    """
-    Splits the dataset into training and testing sets, scales the features using 
-    StandardScaler, and trains a Linear Regression model on the scaled training data.
 
-    This function:
-    1. Splits the dataset (features and target) into training and testing sets.
-    2. Scales the feature data using StandardScaler to normalize the input.
-    3. Trains a Linear Regression model on the scaled training data.
+# Function to save a trained model and its scaler
+def save_model_and_scaler(model, scaler, model_name, base_dir='models'):
+    """
+    Save a trained model and its associated scaler to disk.
+    
+    Parameters:
+    - model: The trained model to save
+    - scaler: The fitted scaler to save
+    - model_name (str): Base name for the model files
+    - base_dir (str): Directory to save the files in
+    
+    Returns:
+    - model_filename (str): Path to the saved model file
+    - scaler_filename (str): Path to the saved scaler file
+    """
+    import os
+    from datetime import datetime
+    
+    # Create directory if it doesn't exist
+    os.makedirs(base_dir, exist_ok=True)
+    
+    # Generate filenames with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_filename = os.path.join(base_dir, f"{model_name}_{timestamp}.joblib")
+    scaler_filename = os.path.join(base_dir, f"{model_name}_scaler_{timestamp}.joblib")
+    
+    # Save the model and scaler
+    joblib.dump(model, model_filename)
+    joblib.dump(scaler, scaler_filename)
+    
+    print(f"Model saved to {model_filename}")
+    print(f"Scaler saved to {scaler_filename}")
+    
+    return model_filename, scaler_filename
+
+# Function to load a saved model and its scaler
+def load_model_and_scaler(model_filename, scaler_filename):
+    """
+    Load a saved model and its associated scaler from disk.
+    
+    Parameters:
+    - model_filename (str): Path to the saved model file
+    - scaler_filename (str): Path to the saved scaler file
+    
+    Returns:
+    - model: The loaded model
+    - scaler: The loaded scaler
+    """
+    model = joblib.load(model_filename)
+    scaler = joblib.load(scaler_filename)
+    
+    return model, scaler
+
+# Function to make predictions using a saved model and scaler
+def predict_with_model(model, scaler, x_new):
+    """
+    Make predictions using a trained model and its associated scaler.
+    
+    Parameters:
+    - model: The trained model
+    - scaler: The fitted scaler
+    - x_new (array-like): New feature data to predict
+    
+    Returns:
+    - predictions: Model predictions for the new data
+    """
+    # Transform the new data using the scaler
+    x_new_scaled = scaler.transform(x_new)
+    
+    # Make predictions
+    predictions = model.predict(x_new_scaled)
+    
+    return predictions
+
+def create_linear_regression_model(x, y, test_size=0.3, shuffle=True, random_state=0, params=None):
+    """
+    Creates and trains a linear regression model.
+    
+    Parameters:
+    -----------
+    x : array-like of shape (n_samples, n_features)
+        The input features.
+    y : array-like of shape (n_samples,) or (n_samples, n_targets)
+        The target values.
+    test_size : float, default=0.3
+        The proportion of the dataset to include in the test split.
+    shuffle : bool, default=True
+        Whether to shuffle the data before splitting.
+    random_state : int, default=0
+        Controls the shuffling applied to the data before applying the split.
+    params : dict, default=None
+        Parameters to pass to the LinearRegression model. If None, default parameters are used.
+        
+    Returns:
+    --------
+    scaler : StandardScaler
+        The fitted scaler used to standardize the features.
+    model : LinearRegression
+        The trained linear regression model.
+    x_train : array-like
+        The training input samples.
+    x_test : array-like
+        The testing input samples.
+    y_train : array-like
+        The training target values.
+    y_test : array-like
+        The testing target values.
+    """
+    
+    # Split the data into training and testing sets
+    x_train, x_test, y_train, y_test = train_test_split(
+        x, y, test_size=test_size, shuffle=shuffle, random_state=random_state
+    )
+    
+    # Scale the features
+    scaler = StandardScaler()
+    x_train_scaled = scaler.fit_transform(x_train)
+    x_test_scaled = scaler.transform(x_test)
+    
+    # Create and train the model
+    if params is None:
+        model = LinearRegression()
+    else:
+        model = LinearRegression(**params)
+    
+    model.fit(x_train_scaled, y_train)
+    
+    return scaler, model, x_train_scaled, x_test_scaled, y_train, y_test
+
+
+def create_svm_model(x, y, test_size=0.3, shuffle=True, random_state=0, params=None):
+    """
+    Creates and trains an SVM model.
 
     Parameters:
-    - x (array-like): The feature data (independent variables).
-    - y (array-like): The target data (dependent variable).
-    - test_size (float, optional): Proportion of the dataset to include in the test split (default is 0.3).
-    - shuffle (bool, optional): Whether to shuffle the data before splitting (default is True).
-    - random_state (int, optional): The seed used by the random number generator for reproducibility (default is 0).
+    -----------
+    x : array-like of shape (n_samples, n_features)
+        The input features.
+    y : array-like of shape (n_samples,)
+        The target values (classification or regression).
+    test_size : float, default=0.3
+        The proportion of the dataset to include in the test split.
+    shuffle : bool, default=True
+        Whether to shuffle the data before splitting.
+    random_state : int, default=0
+        Controls the shuffling applied to the data before applying the split.
+    params : dict, default=None
+        Parameters to pass to the SVM model. If None, default parameters are used.
 
     Returns:
-    - MyScaler (StandardScaler): The scaler used to normalize the features.
-    - LinearRegMod (LinearRegression): The trained Linear Regression model.
-    - x_train (array-like): The feature data for the training set.
-    - x_test (array-like): The feature data for the test set.
-    - y_train (array-like): The target data for the training set.
-    - y_test (array-like): The target data for the test set.
+    --------
+    scaler : StandardScaler
+        The fitted scaler used to standardize the features.
+    model : SVC
+        The trained SVM model.
+    x_train : array-like
+        The training input samples.
+    x_test : array-like
+        The testing input samples.
+    y_train : array-like
+        The training target values.
+    y_test : array-like
+        The testing target values.
     """
-    # Split data into training and testing sets
-    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=test_size, shuffle=shuffle, random_state=random_state)
-    
-    # Initialize the StandardScaler
-    MyScaler = StandardScaler()
-    
-    # Fit and transform the training data, then transform the test data
-    x_Scaled_train = MyScaler.fit_transform(x_train)
-    x_Scaled_test = MyScaler.transform(x_test)
-    
-    # Initialize and fit the Linear Regression model
-    LinearRegMod = LinearRegression()
-    LinearRegMod.fit(x_Scaled_train, y_train)
-    
-    # Return scaler, model, and data splits
-    return MyScaler, LinearRegMod, x_train, x_test, y_train, y_test
+    # Split the data
+    x_train, x_test, y_train, y_test = train_test_split(
+        x, y, test_size=test_size, shuffle=shuffle, random_state=random_state
+    )
 
-def save_model_and_scaler(model, scaler, model_filename='model', scaler_filename='scaler', save_dir='Model'):
+    # Scale the features
+    scaler = StandardScaler()
+    x_train_scaled = scaler.fit_transform(x_train)
+    x_test_scaled = scaler.transform(x_test)
+
+    # Create and train the model
+    if params is None:
+        model = SVC()
+    else:
+        model = SVC(**params)
+
+    model.fit(x_train_scaled, y_train)
+
+    return scaler, model, x_train_scaled, x_test_scaled, y_train, y_test
+
+
+def create_random_forest_model(x, y, test_size=0.3, shuffle=True, random_state=0, params=None):
     """
-    Saves the model and scaler to disk with a timestamped filename to ensure unique storage.
-
-    This function:
-    1. Generates a timestamp in the format "YYYY-MM-DD_HH-MM-SS".
-    2. Saves the model and scaler to disk in the specified directory with the timestamped filenames.
-    3. Prints the file paths where the model and scaler have been saved.
+    Creates and trains an SVM model.
 
     Parameters:
-    - model (sklearn model or similar): The trained machine learning model to be saved.
-    - scaler (scikit-learn Scaler or similar): The scaler used to scale the features.
-    - model_filename (str, optional): The base filename for the model (default is 'model').
-    - scaler_filename (str, optional): The base filename for the scaler (default is 'scaler').
-    - save_dir (str, optional): The directory where the model and scaler will be saved (default is 'Model').
+    -----------
+    x : array-like of shape (n_samples, n_features)
+        The input features.
+    y : array-like of shape (n_samples,)
+        The target values (classification or regression).
+    test_size : float, default=0.3
+        The proportion of the dataset to include in the test split.
+    shuffle : bool, default=True
+        Whether to shuffle the data before splitting.
+    random_state : int, default=0
+        Controls the shuffling applied to the data before applying the split.
+    params : dict, default=None
+        Parameters to pass to the SVM model. If None, default parameters are used.
 
     Returns:
-    - None: This function saves the model and scaler to disk and prints the file paths.
+    --------
+    scaler : StandardScaler
+        The fitted scaler used to standardize the features.
+    model : random_forest
+        The trained SVM model.
+    x_train : array-like
+        The training input samples.
+    x_test : array-like
+        The testing input samples.
+    y_train : array-like
+        The training target values.
+    y_test : array-like
+        The testing target values.
     """
-    # Generate timestamp with the format "YYYY-MM-DD_HH-MM-SS"
-    timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-    
-    # Create the full paths with timestamp
-    model_path = f'{save_dir}/{model_filename}_{timestamp}.pkl'
-    scaler_path = f'{save_dir}/{scaler_filename}_{timestamp}.pkl'
-    
-    # Save the model and scaler with timestamped filenames
-    joblib.dump(model, model_path)
-    joblib.dump(scaler, scaler_path)
-    
-    print(f"Model saved as {model_path}")
-    print(f"Scaler saved as {scaler_path}")
+    # Split the data
+    x_train, x_test, y_train, y_test = train_test_split(
+        x, y, test_size=test_size, shuffle=shuffle, random_state=random_state
+    )
 
-def predict(user_input,ModelPath,ScalerPath):
+    # Scale the features (Optional for RandomForest, but we'll keep it consistent)
+    scaler = StandardScaler()
+    x_train_scaled = scaler.fit_transform(x_train)
+    x_test_scaled = scaler.transform(x_test)
+
+    # Create and train the model
+    if params is None:
+        model = RandomForestClassifier(random_state=random_state)
+    else:
+        model = RandomForestClassifier(random_state=random_state, **params)
+
+    model.fit(x_train_scaled, y_train)
+
+    return scaler, model, x_train_scaled, x_test_scaled, y_train, y_test
+
+
+
+def create_decision_tree_model(x, y, test_size=0.3, shuffle=True, random_state=0, params=None):
     """
-    Makes a prediction using a pre-trained model and a saved scaler.
-
-    This function:
-    1. Loads the pre-trained model and scaler from the specified file paths.
-    2. Converts the user input (in dictionary format) to a 2D array.
-    3. Scales the input data using the loaded scaler.
-    4. Returns the prediction result from the model based on the scaled input.
+    Creates and trains an SVM model.
 
     Parameters:
-    - user_input (dict): A dictionary containing feature names as keys and feature values as inputs for prediction.
-    - ModelPath (str): The file path to the saved pre-trained model (in .pkl format).
-    - ScalerPath (str): The file path to the saved scaler (in .pkl format) used to scale the input data.
+    -----------
+    x : array-like of shape (n_samples, n_features)
+        The input features.
+    y : array-like of shape (n_samples,)
+        The target values (classification or regression).
+    test_size : float, default=0.3
+        The proportion of the dataset to include in the test split.
+    shuffle : bool, default=True
+        Whether to shuffle the data before splitting.
+    random_state : int, default=0
+        Controls the shuffling applied to the data before applying the split.
+    params : dict, default=None
+        Parameters to pass to the decision_tree model. If None, default parameters are used.
 
     Returns:
-    - result: The prediction made by the model based on the processed and scaled input data.
-
-    Exceptions:
-    - FileNotFoundError: If the model or scaler file is not found at the specified paths.
-    - Any other errors during input processing, scaling, or prediction will be logged and raised.
+    --------
+    scaler : StandardScaler
+        The fitted scaler used to standardize the features.
+    model : random_forest
+        The trained decision_tree model.
+    x_train : array-like
+        The training input samples.
+    x_test : array-like
+        The testing input samples.
+    y_train : array-like
+        The training target values.
+    y_test : array-like
+        The testing target values.
     """
-    Model = joblib.load(ModelPath)  # Load the trained model
-    MyScaler = joblib.load(ScalerPath)  # Load the saved scaler
-    # Convert dict to 2D array if needed
-    input_array = np.array([list(user_input.values())])
-    input_array=MyScaler.transform(input_array)
-    result = Model.predict(input_array)
-    return result    
+
+    from sklearn.model_selection import train_test_split
+    from sklearn.tree import DecisionTreeClassifier
+    from sklearn.preprocessing import StandardScaler
+
+    # Split the data
+    x_train, x_test, y_train, y_test = train_test_split(
+        x, y, test_size=test_size, shuffle=shuffle, random_state=random_state
+    )
+
+    # Scale the features (Optional, but consistent)
+    scaler = StandardScaler()
+    x_train_scaled = scaler.fit_transform(x_train)
+    x_test_scaled = scaler.transform(x_test)
+
+    # Create and train the model
+    if params is None:
+        model = DecisionTreeClassifier(random_state=random_state)
+    else:
+        model = DecisionTreeClassifier(random_state=random_state, **params)
+
+    model.fit(x_train_scaled, y_train)
+
+    return scaler, model, x_train_scaled, x_test_scaled, y_train, y_test
+
+
+def evaluate_model_performance(y_true, y_pred, task_type='regression'):
+    """
+    Evaluates model performance with comprehensive metrics.
+    
+    Parameters:
+    - y_true: True labels
+    - y_pred: Predicted labels
+    - task_type: Type of task ('regression' or 'classification')
+    
+    Returns:
+    - dict: Dictionary containing evaluation metrics
+    """
+    from sklearn.metrics import (
+        mean_squared_error, mean_absolute_error, r2_score,
+        accuracy_score, precision_score, recall_score, f1_score,
+        confusion_matrix, roc_auc_score
+    )
+    
+    metrics = {}
+    
+    if task_type == 'regression':
+        metrics['mse'] = mean_squared_error(y_true, y_pred)
+        metrics['rmse'] = np.sqrt(metrics['mse'])
+        metrics['mae'] = mean_absolute_error(y_true, y_pred)
+        metrics['r2'] = r2_score(y_true, y_pred)
+        
+    elif task_type == 'classification':
+        metrics['accuracy'] = accuracy_score(y_true, y_pred)
+        metrics['precision'] = precision_score(y_true, y_pred, average='weighted')
+        metrics['recall'] = recall_score(y_true, y_pred, average='weighted')
+        metrics['f1'] = f1_score(y_true, y_pred, average='weighted')
+        metrics['confusion_matrix'] = confusion_matrix(y_true, y_pred)
+        
+        # ROC AUC for binary classification
+        if len(np.unique(y_true)) == 2:
+            metrics['roc_auc'] = roc_auc_score(y_true, y_pred)
+    
+    return metrics
+
+def optimize_hyperparameters(model, param_grid, X, y, cv=5, scoring='neg_mean_squared_error'):
+    """
+    Optimizes hyperparameters using GridSearchCV.
+    
+    Parameters:
+    - model: Base model to optimize
+    - param_grid: Dictionary of parameters to search
+    - X: Feature matrix
+    - y: Target vector
+    - cv: Number of cross-validation folds
+    - scoring: Scoring metric to optimize
+    
+    Returns:
+    - dict: Best parameters and scores
+    """
+    grid_search = GridSearchCV(
+        estimator=model,
+        param_grid=param_grid,
+        cv=cv,
+        scoring=scoring,
+        n_jobs=-1,
+        verbose=1
+    )
+    
+    grid_search.fit(X, y)
+    
+    results = {
+        'best_params': grid_search.best_params_,
+        'best_score': grid_search.best_score_,
+        'best_estimator': grid_search.best_estimator_,
+        'cv_results': grid_search.cv_results_
+    }
+    
+    return results
+
+def create_ensemble_model(models, X, y, weights=None):
+    """
+    Creates an ensemble model from multiple base models.
+    
+    Parameters:
+    - models: List of base models
+    - X: Feature matrix
+    - y: Target vector
+    - weights: Optional weights for each model
+    
+    Returns:
+    - Ensemble model
+    """
+    from sklearn.ensemble import VotingRegressor, VotingClassifier
+    
+    # Determine if regression or classification
+    is_regression = isinstance(models[0], (
+        LinearRegression, Ridge, Lasso, ElasticNet,
+        RandomForestRegressor, GradientBoostingRegressor,
+        SVR, KNeighborsRegressor, MLPRegressor,
+        XGBRegressor, LGBMRegressor
+    ))
+    
+    # Create ensemble
+    if is_regression:
+        ensemble = VotingRegressor(
+            estimators=[(f'model_{i}', model) for i, model in enumerate(models)],
+            weights=weights
+        )
+    else:
+        ensemble = VotingClassifier(
+            estimators=[(f'model_{i}', model) for i, model in enumerate(models)],
+            weights=weights,
+            voting='soft'
+        )
+    
+    # Fit ensemble
+    ensemble.fit(X, y)
+    
+    return ensemble
+
+def create_auto_ml_pipeline(X, y, task_type='regression', time_limit=3600):
+    """
+    Creates an automated machine learning pipeline.
+    
+    Parameters:
+    - X: Feature matrix
+    - y: Target vector
+    - task_type: Type of task ('regression' or 'classification')
+    - time_limit: Time limit for optimization in seconds
+    
+    Returns:
+    - dict: Best model and results
+    """
+    from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import StandardScaler
+    
+    # Define base models
+    if task_type == 'regression':
+        models = [
+            ('linear', LinearRegression()),
+            ('ridge', Ridge()),
+            ('lasso', Lasso()),
+            ('rf', RandomForestRegressor()),
+            ('gb', GradientBoostingRegressor()),
+            ('xgb', XGBRegressor()),
+            ('lgbm', LGBMRegressor())
+        ]
+    else:
+        models = [
+            ('logistic', LogisticRegression()),
+            ('rf', RandomForestClassifier()),
+            ('gb', GradientBoostingClassifier()),
+            ('xgb', XGBClassifier()),
+            ('lgbm', LGBMClassifier())
+        ]
+    
+    # Create pipeline
+    pipeline = Pipeline([
+        ('scaler', StandardScaler()),
+        ('model', None)  # Will be set during optimization
+    ])
+    
+    # Optimize each model
+    results = {}
+    for name, model in models:
+        pipeline.set_params(model=model)
+        grid_result = optimize_hyperparameters(
+            pipeline,
+            param_grid={},
+            X=X,
+            y=y,
+            cv=5
+        )
+        results[name] = grid_result
+    
+    # Select best model
+    best_model_name = max(results, key=lambda x: results[x]['best_score'])
+    best_model = results[best_model_name]['best_estimator']
+    
+    return {
+        'best_model': best_model,
+        'best_model_name': best_model_name,
+        'results': results
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
