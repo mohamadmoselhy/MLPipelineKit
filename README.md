@@ -1,24 +1,41 @@
-# Linear Regression Model with Scikit-Learn
 
-This project provides a complete pipeline for training, evaluating, saving, and making predictions with a Linear Regression model using Scikit-Learn. The pipeline includes data preprocessing, model training, evaluation metrics, model persistence, and user input-based prediction.
+# 📦 Machine Learning Library (MLPipelineKit)
 
-## Features
+A modular Python library that streamlines the process of building and deploying machine learning models—starting from data preprocessing to model evaluation and prediction. Built using Scikit-learn and designed for simplicity, extensibility, and real-world integration.
 
-- Splits dataset into training and testing sets
-- Normalizes input features using `StandardScaler`
-- Trains a `LinearRegression` model
-- Evaluates the model using MSE, MAE, and R² score
-- Saves the model and scaler with timestamped filenames
-- Loads a saved model and scaler to make predictions on user input
+## 🚀 Features
 
-## Requirements
+- End-to-end Linear Regression pipeline
+- Modular functions for:
+  - Data cleaning & transformation
+  - Feature-label splitting
+  - Model training, evaluation, and saving
+  - Interactive predictions via user input
+- Scikit-learn compatible
+- Configurable and ready for extension
 
-- Python 3.x
-- `scikit-learn`
-- `numpy`
-- `joblib`
+## 📂 Folder Structure
 
-Install required packages via pip:
+```
+MachineLearningIbirary/
+├── src/                    # Core ML pipeline modules
+├── utils.py               # Utility functions for data processing
+├── README.md              # Project documentation
+├── LICENSE.txt            # License file (GPL-3.0)
+├── pyproject.toml         # Python packaging configuration
+└── library_documentation.md # Extended technical documentation
+```
 
-```bash
-pip install scikit-learn numpy joblib
+
+See example usage and inputs in the `library_documentation.md`.
+
+## 📈 Planned Enhancements
+
+- Add classification and clustering models
+- CLI support for training and prediction
+- Jupyter notebook integration
+- Unit tests and CI/CD
+
+## 📄 License
+
+This project is licensed under the GPL-3.0 License. See [LICENSE.txt](./LICENSE.txt) for more details.
