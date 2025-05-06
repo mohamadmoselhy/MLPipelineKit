@@ -39,9 +39,6 @@ def plot_boxplots(df, features, save_folder="Milestone 1/boxplot_images", figsiz
     print(f"Boxplots saved in '{save_folder}'")
 
 
-
-
-
 def plot_histograms(data, features, colors=None, save_folder="Milestone 1/histogram_images", figsize=(10, 6)):
     """
     Plots histograms with KDE for the specified features in the dataset and saves each plot to a specified subfolder.
@@ -138,7 +135,6 @@ def plot_pairplots(data, features, hue=None, save_folder="pairplot_images", grap
     plt.close()  # Close the plot to avoid overlap with the next one
 
     print(f"Pair plot has been saved to the '{save_folder}' folder.")
-
 
 def plot_heatmap(data, features, save_folder="heatmap_images", graph_Name="correlation_heatmap", cmap="coolwarm", figsize=(10, 8)):
     """

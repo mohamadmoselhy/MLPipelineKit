@@ -66,55 +66,207 @@ def make_prediction(user_input, ModelPath, ScalerPath):
         logging.error(f"Error occurred during prediction: {e}")
         raise  # Rethrow the error after logging it
 
-def load_data(file_path: str):
+def load_data(file_path: str, sheet_name: str = 0):
     """
-    Loads a CSV file into a pandas DataFrame and processes the data.
+    Loads a CSV or Excel file into a pandas DataFrame and processes the data.
 
     This function:
-    1. Attempts to read the CSV file from the provided path.
-    2. Converts all column names to lowercase for consistency.
-    3. Strips any leading/trailing spaces from column names and replaces multiple spaces with a single space.
-    4. Prints the initial dimensions (rows and columns) of the dataset.
-    5. Prints the updated column names after loading the data.
-    6. Prints insights about the dataset such as shape, column types, missing values, and unique values.
+    1. Detects the file type by extension and reads it accordingly.
+    2. For Excel files, reads the first sheet by default or a specified sheet name/index.
+    3. Converts all column names to lowercase for consistency.
+    4. Strips any leading/trailing spaces from column names and replaces multiple spaces with a single space.
+    5. Prints the initial dimensions (rows and columns) of the dataset.
+    6. Prints the updated column names after loading the data.
     7. Returns the DataFrame containing the loaded data.
 
     Parameters:
-    - file_path (str): The path to the CSV file to be loaded.
+    - file_path (str): The path to the data file to be loaded.
+    - sheet_name (str|int, optional): The Excel sheet name or index to read. Defaults to 0 (first sheet).
 
     Returns:
     - df (pandas.DataFrame): The loaded dataset as a DataFrame.
     """
-    # Read the CSV file into a DataFrame
-    df = pd.read_csv(file_path)
+    ext = os.path.splitext(file_path)[-1].lower()
+    
+    if ext == '.csv':
+        df = pd.read_csv(file_path)
+    elif ext in ['.xls', '.xlsx']:
+        df = pd.read_excel(file_path, sheet_name=sheet_name)
+    else:
+        raise ValueError(f"Unsupported file format: {ext}")
 
     print("=============================================================================")
-    # Print updated column names
-    print(f"column names: {df.columns.tolist()}")
+    print(f"Original column names: {df.columns.tolist()}")
 
-    # Clean column names: strip spaces, convert to lowercase, and replace multiple spaces with a single one
+    # Clean column names
     df.columns = df.columns.str.strip().str.lower().str.replace(r'\s+', ' ', regex=True)
-    
-    # Store initial dimensions
-    initial_number_of_rows = df.shape[0]
-    initial_number_of_columns = df.shape[1]
+
     print("=============================================================================")
-    # Print updated column names
-    print(f"Updated column names(strip, lowercase, and standardize spaces): {df.columns.tolist()}")
+    print(f"Updated column names (strip, lowercase, and standardize spaces): {df.columns.tolist()}")
     print("=============================================================================")
-    
-    # Confirm successful data loading
-    print(f"Dataset loaded successfully with {initial_number_of_rows} rows and {initial_number_of_columns} columns.")
+    print(f"Dataset loaded successfully with {df.shape[0]} rows and {df.shape[1]} columns.")
     print("=============================================================================")
-    
+
     return df
+
+def full_dataframe_report(
+    df: pd.DataFrame,
+    verbose: bool = True,
+    return_dict: bool = True,
+    return_text: bool = True,
+    show_plots: bool = False,
+    top_n: int = 3
+):
+    """
+    Provides a full summary of a DataFrame including structure, missing data, 
+    duplicates, unique values, outliers, and memory usage.
+    """
+
+    # Set display format for floats (human-readable, no scientific notation)
+    pd.set_option('display.float_format', '{:,.2f}'.format)
+
+    report = {}
+    text = []
+
+    def section(title):
+        line = "=" * 80
+        text.extend([line, f"{title}", line])
+
+    # Shape
+    shape = df.shape
+    report['shape'] = shape
+    section("Shape of DataFrame")
+    text.append(f"{shape[0]} rows × {shape[1]} columns")
+
+    # Validate input
+    is_empty = df.empty
+    duplicated_cols = df.columns[df.columns.duplicated()].tolist()
+    constant_cols = [col for col in df.columns if df[col].nunique() <= 1]
+    mixed_type_cols = [col for col in df.columns if df[col].apply(type).nunique() > 1]
+    report['validation'] = {
+        'is_empty': is_empty,
+        'duplicated_columns': duplicated_cols,
+        'constant_columns': constant_cols,
+        'mixed_type_columns': mixed_type_cols
+    }
+    section("Validation Checks")
+    text.append(f"Empty: {is_empty}")
+    text.append(f"Duplicated Columns: {duplicated_cols or 'None'}")
+    text.append(f"Constant Columns: {constant_cols or 'None'}")
+    text.append(f"Mixed-Type Columns: {mixed_type_cols or 'None'}")
+
+    # Missing data
+    missing_count = df.isnull().sum()
+    missing_pct = (missing_count / len(df)) * 100
+    missing_df = pd.DataFrame({
+        'Missing Count': missing_count,
+        'Missing Percentage': missing_pct
+    })
+    report['missing_data'] = missing_df.to_dict()
+    section("Missing Data")
+    text.extend(missing_df[missing_count > 0].to_string().splitlines() or ["No missing values."])
+
+    # Duplicates
+    dup_rows = df.duplicated().sum()
+    dup_pct = (dup_rows / len(df)) * 100
+    report['duplicates'] = {'count': dup_rows, 'percentage': dup_pct}
+    section("Duplicate Rows")
+    text.append(f"{dup_rows} duplicate rows ({dup_pct:.2f}%)")
+
+    # Data types
+    dtype_info = pd.DataFrame(df.dtypes, columns=["Data Type"])
+    report['data_types'] = dtype_info.to_dict()
+    section("Data Types")
+    text.extend(dtype_info.to_string().splitlines())
+
+    # Unique values
+    unique_vals = df.nunique()
+    unique_pct = (unique_vals / len(df)) * 100
+    unique_df = pd.DataFrame({
+        'Unique Count': unique_vals,
+        'Unique Percentage': unique_pct
+    }).sort_values(by='Unique Count')
+    report['unique_values'] = unique_df.to_dict()
+    section("Unique Values")
+    text.extend(unique_df.to_string().splitlines())
+
+    # Top frequent values for categoricals
+    top_freq = {}
+    section("Top Frequent Values (Categorical Columns)")
+    for col in df.select_dtypes(include=['object', 'category']):
+        top_values = df[col].value_counts().head(top_n)
+        top_freq[col] = top_values.to_dict()
+        line = f"{col}: " + ", ".join([f"{k} ({v})" for k, v in top_values.items()])
+        text.append(line)
+    if not top_freq:
+        text.append("No categorical columns.")
+    report['top_frequent_values'] = top_freq
+
+    # Outliers using IQR
+    outliers = {}
+    section("Outliers (IQR method)")
+    for col in df.select_dtypes(include=np.number):
+        q1 = df[col].quantile(0.25)
+        q3 = df[col].quantile(0.75)
+        iqr = q3 - q1
+        lower = q1 - 1.5 * iqr
+        upper = q3 + 1.5 * iqr
+        mask = (df[col] < lower) | (df[col] > upper)
+        outlier_count = mask.sum()
+        outlier_pct = (outlier_count / len(df)) * 100
+        outliers[col] = {'Outlier Count': outlier_count, 'Outlier Percentage': outlier_pct}
+        text.append(f"{col}: {outlier_count} outliers ({outlier_pct:.2f}%)")
+    report['outliers'] = outliers
+
+    # Skewness
+    skewness = df.select_dtypes(include=np.number).skew()
+    skewed_cols = skewness[skewness.abs() > 1].sort_values(ascending=False)
+    report['highly_skewed_columns'] = skewed_cols.to_dict()
+    section("Highly Skewed Numeric Columns (|skew| > 1)")
+    if not skewed_cols.empty:
+        for col, val in skewed_cols.items():
+            text.append(f"{col}: {val:.2f}")
+            if show_plots:
+                plt.figure(figsize=(6, 3))
+                sns.histplot(df[col].dropna(), kde=True)
+                plt.title(f"Skewed: {col}")
+                plt.xlabel(col)
+                plt.tight_layout()
+                plt.show()
+    else:
+        text.append("No highly skewed numeric columns.")
+
+    # Memory usage
+    mem_usage = df.memory_usage(deep=True).sum() / (1024 ** 2)
+    report['memory_usage_MB'] = round(mem_usage, 2)
+    section("Memory Usage")
+    text.append(f"Total memory usage: {mem_usage:.2f} MB")
+
+    # Descriptive statistics
+    desc_stats = df.describe().T
+    report['describe'] = desc_stats.to_dict()
+    section("Descriptive Statistics")
+    text.extend(desc_stats.to_string().splitlines())
+
+    # Reset display format after function if needed
+    # pd.reset_option('display.float_format')
+
+    if verbose:
+        print("\n".join(text))
+
+    if return_text:
+        return text
+    elif return_dict:
+        return report
+    else:
+        return None
 
 def check_data_for_preprocessing(
     df: pd.DataFrame, 
     verbose: bool = True, 
-    return_summary: bool = False, 
-    return_text_report: bool = False, 
-    show_plots: bool = False,
+    return_summary: bool = True, 
+    return_text_report: bool = True, 
+    show_plots: bool = True,
     top_n_unique: int = 3
 ):
     """
@@ -263,7 +415,6 @@ def check_data_for_preprocessing(
     if return_summary:
         return insights
 
-
 class DataFrameStatistics:
     """
     A class to perform various statistical operations and validation on a Pandas DataFrame.
@@ -394,7 +545,6 @@ class DataFrameStatistics:
             "MemoryUsage": self.memory_usage_info(),
             "Describe": self.describe().to_dict()
         }
-
 
 def standardize_column_headers(df: pd.DataFrame) -> pd.DataFrame:
     """

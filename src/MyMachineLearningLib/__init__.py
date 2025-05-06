@@ -46,7 +46,6 @@ def calculate_regression_metrics(y_test, y_predict):
     
     return mse, mae, r2
 
-
 # Function to save a trained model and its scaler
 def save_model_and_scaler(model, scaler, model_name, base_dir='models'):
     """
